@@ -1,0 +1,781 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Campus Heating Anomaly Dashboard</title>
+
+  <!-- Leaflet (basemap) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- CSV parser -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <style>
+    :root{
+      --bg: #f6f7fb;
+      --card: #ffffff;
+      --text: #101828;
+      --muted: #667085;
+      --border: #eaecf0;
+      --shadow: 0 10px 30px rgba(16,24,40,0.06);
+      --radius: 14px;
+    }
+
+    body{
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      margin: 0;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    .topbar{ padding: 14px 12px 8px 12px; }
+    .topbar-inner{
+      width: 100%;
+      margin: 0;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 12px;
+    }
+    .topbar-left{ display:flex; justify-content:flex-start; }
+    .topbar-center{ text-align: center; }
+    .topbar-right{ display:flex; justify-content:flex-end; gap:10px; }
+
+    .title{
+      font-size: 22px;
+      font-weight: 800;
+      margin: 0;
+      letter-spacing: -0.3px;
+    }
+    .subtitle{
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    button{
+      padding: 9px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #fff;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    button:hover{ filter: brightness(0.98); }
+    button:disabled{ opacity: 0.45; cursor: not-allowed; }
+
+    .btnPrimary{
+      background: #101828;
+      color: #fff;
+      border-color: #101828;
+    }
+    .btnPrimary:hover{ filter: brightness(1.05); }
+
+    #wrap{
+      width: 100%;
+      margin: 0;
+      padding: 0 12px 12px 12px;
+      display: grid;
+      grid-template-columns: 2.2fr 1fr;
+      gap: 12px;
+      align-items: start;
+      box-sizing: border-box;
+    }
+
+    .card{
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+
+    #map{
+      width: 100%;
+      height: 78vh;
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .panel-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap: 10px;
+    }
+    .panel-title{
+      font-weight: 800;
+      font-size: 16px;
+      margin: 0;
+    }
+    .muted{ color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+    .pill{
+      display:inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+      background: #fff;
+      white-space: nowrap;
+      align-self: flex-start;
+    }
+
+    .row{ display:flex; gap:8px; align-items:center; margin-top: 12px; }
+
+    select, input{
+      padding: 9px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #fff;
+      outline: none;
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+    }
+
+    .kpi{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .kpi .box{
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+      background: #fff;
+    }
+    .kpi .label{ color: var(--muted); font-size: 12px; }
+    .kpi .val{ font-size: 18px; font-weight: 800; margin-top: 2px; }
+
+    .tableWrap{
+      max-height: 48vh;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      margin-top: 12px;
+      background: #fff;
+    }
+
+    table{ width:100%; border-collapse: collapse; font-size: 13px; }
+    th, td{ border-bottom: 1px solid var(--border); padding: 10px 8px; text-align:left; white-space: nowrap; }
+    th{
+      background: #fafbff;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      font-size: 12px;
+      color: #344054;
+    }
+    tbody tr:hover{ background: #f9fafb; cursor: pointer; }
+
+    .downloadRow{ display:flex; gap:8px; margin-top:12px; flex-wrap: wrap; }
+
+    .legend{
+      background: rgba(255,255,255,0.96);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      line-height: 1.2;
+      box-shadow: var(--shadow);
+      min-width: 220px;
+    }
+    .legend-title{ font-weight: 800; font-size: 13px; margin-bottom: 8px; }
+    .grad{
+      height: 12px; border-radius: 999px;
+      background: linear-gradient(90deg, #f7f3ef, #f2c9a6, #ea7b5b, #c80000);
+      border: 1px solid var(--border);
+      margin: 6px 0;
+    }
+    .legend-row{ display:flex; justify-content: space-between; font-size: 12px; color:#475467; }
+    .legend-sizes{ margin-top: 10px; font-size: 12px; color:#475467; }
+    .dotline{ display:flex; align-items:center; gap:8px; margin-top:8px; }
+    .dot{ border-radius: 50%; background: rgba(200,0,0,0.20); border: 1px solid rgba(0,0,0,0.30); }
+
+    .leaflet-tooltip{ border-radius: 12px; padding: 8px 10px; }
+
+    .modalOverlay{
+      position: fixed; inset: 0;
+      background: rgba(16,24,40,0.55);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding: 18px;
+      z-index: 9999;
+    }
+    .modal{
+      width: min(760px, 100%);
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+    .modalHead{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .modalTitle{ font-size: 16px; font-weight: 900; margin: 0; }
+    .modalBody{ color: #344054; font-size: 13px; line-height: 1.5; }
+    .modalBody ul{ margin: 8px 0 0 18px; }
+    .modalBody li{ margin: 6px 0; }
+
+    @media (max-width: 980px){
+      .topbar-inner{
+        grid-template-columns: 1fr;
+        text-align: center;
+      }
+      .topbar-left, .topbar-right{ justify-content: center; }
+      #wrap{ grid-template-columns: 1fr; padding: 0 10px 10px 10px; }
+      #map{ height: 62vh; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="topbar-left"></div>
+
+      <div class="topbar-center">
+        <h1 class="title">Campus Heating Anomaly Dashboard</h1>
+        <div class="subtitle">Independent monitoring window (Oct–Dec 2025)</div>
+      </div>
+
+      <div class="topbar-right">
+        <button id="aboutBtn" class="btnPrimary">About / Help</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="aboutOverlay" class="modalOverlay" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modalHead">
+        <div class="modalTitle">What this dashboard shows</div>
+        <button id="aboutClose">Close</button>
+      </div>
+
+      <div class="modalBody">
+        <p>
+          This dashboard summarises detected heating anomalies across campus buildings during deployment-style testing.
+          Select a building to view its anomaly events and severity statistics.
+        </p>
+        <ul>
+          <li><b>Map markers</b>: colour indicates <b>mean severity</b> (lighter = lower, darker = higher); size indicates <b>event count</b>.</li>
+          <li><b>Right panel KPIs</b>: event count, total event hours, mean severity, peak severity for the selected building.</li>
+          <li><b>Event table</b>: events ranked by impact (AE_sum). Use the search box to filter by type or ID.</li>
+          <li><b>Thr max</b>: peak adaptive threshold during the event. <b>Over thr (%)</b>: how far AE_max exceeded that threshold.</li>
+          <li><b>Downloads</b>: export events for a building, filtered events, or building-level metrics.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div id="wrap">
+    <div class="card">
+      <div id="map"></div>
+    </div>
+
+    <div class="card">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title" id="bTitle">Select a building</div>
+          <div class="muted" id="bSub">Click a building on the map or choose from the dropdown.</div>
+        </div>
+        <span id="bId" class="pill">—</span>
+      </div>
+
+      <div class="row">
+        <select id="buildingSelect"></select>
+        <button id="clearBtn">Clear</button>
+      </div>
+
+      <div class="kpi">
+        <div class="box">
+          <div class="label">Event count</div>
+          <div class="val" id="kpiEvents">—</div>
+        </div>
+        <div class="box">
+          <div class="label">Total event hours</div>
+          <div class="val" id="kpiHours">—</div>
+        </div>
+        <div class="box">
+          <div class="label">Mean severity</div>
+          <div class="val" id="kpiMean">—</div>
+        </div>
+        <div class="box">
+          <div class="label">Peak severity</div>
+          <div class="val" id="kpiPeak">—</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <input id="searchBox" placeholder="Filter events (type / id)..." />
+      </div>
+
+      <div class="tableWrap">
+        <table id="eventsTable">
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>Type</th>
+              <th>Start</th>
+              <th>Dur (h)</th>
+              <th>AE max</th>
+              <th>Thr max</th>
+              <th>Over thr (%)</th>
+              <th>AE sum</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="downloadRow" id="downloadRow">
+        <button id="dlAllBtn" disabled>Download events (building)</button>
+        <button id="dlFilteredBtn" disabled>Download filtered events</button>
+        <button id="dlMetricsBtn">Download building metrics</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const PATH_BUILDINGS = "buildings_xy.csv";
+  const PATH_METRICS   = "deployment_events_oct25_dec25/building_metrics.csv";
+  const PATH_EVENTS    = "deployment_events_oct25_dec25/events.csv";
+
+  function fmt(n, d=2){
+    if (n === null || n === undefined || Number.isNaN(n)) return "—";
+    return Number(n).toFixed(d);
+  }
+  function fmtInt(n){
+    if (n === null || n === undefined || Number.isNaN(n)) return "—";
+    return String(parseInt(n, 10));
+  }
+  function toNiceTime(s){
+    const t = String(s).replace("T"," ");
+    return t.length >= 16 ? t.slice(0,16) : t;
+  }
+
+  // Reads CSV text with UTF-8 first; falls back for files saved in legacy encodings (common from Excel exports).
+  async function fetchTextWithEncodingFallback(path){
+    const res = await fetch(path);
+    if (!res.ok) throw new Error(`Failed to load ${path} (${res.status})`);
+    const buf = await res.arrayBuffer();
+
+    const utf8 = new TextDecoder("utf-8", { fatal: false }).decode(buf);
+    if (utf8.includes("\uFFFD")) {
+      return new TextDecoder("windows-1252", { fatal: false }).decode(buf);
+    }
+    return utf8;
+  }
+
+  async function loadCSV(path){
+    const txt = await fetchTextWithEncodingFallback(path);
+    const parsed = Papa.parse(txt, {header:true, dynamicTyping:true});
+    return parsed.data.filter(r =>
+      r && r.building_id !== undefined && r.building_id !== null && String(r.building_id).trim() !== ""
+    );
+  }
+
+  function buildLookup(rows, key){
+    const m = new Map();
+    rows.forEach(r => m.set(String(r[key]), r));
+    return m;
+  }
+
+  function setKPIs(m){
+    document.getElementById("kpiEvents").textContent = fmtInt(m?.event_count);
+    document.getElementById("kpiHours").textContent  = fmt(m?.total_event_h, 1);
+    document.getElementById("kpiMean").textContent   = fmt(m?.mean_severity, 2);
+    document.getElementById("kpiPeak").textContent   = fmt(m?.peak_severity, 2);
+  }
+
+  function setDownloadEnabled(on){
+    document.getElementById("dlAllBtn").disabled = !on;
+    document.getElementById("dlFilteredBtn").disabled = !on;
+  }
+
+  function clearRightPanel(){
+    document.getElementById("bTitle").textContent = "Select a building";
+    document.getElementById("bId").textContent = "—";
+    document.getElementById("bSub").textContent = "Click a building on the map or choose from the dropdown.";
+    setKPIs(null);
+    renderTable([]);
+    setDownloadEnabled(false);
+  }
+
+  function lerp(a,b,t){ return a + (b-a)*t; }
+  function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+  function severityColor(v, vmin, vmax){
+    const t = (vmax === vmin) ? 0.5 : clamp01((v - vmin) / (vmax - vmin));
+    const stops = [
+      {r:0xF7,g:0xF3,b:0xEF},
+      {r:0xF2,g:0xC9,b:0xA6},
+      {r:0xEA,g:0x7B,b:0x5B},
+      {r:0xC8,g:0x00,b:0x00}
+    ];
+    const seg = Math.min(2, Math.floor(t*3));
+    const localT = (t*3) - seg;
+    const c0 = stops[seg], c1 = stops[seg+1];
+    const r = Math.round(lerp(c0.r, c1.r, localT));
+    const g = Math.round(lerp(c0.g, c1.g, localT));
+    const b = Math.round(lerp(c0.b, c1.b, localT));
+    return `rgb(${r},${g},${b})`;
+  }
+
+  function safeNum(x){
+    const n = Number(x);
+    return Number.isFinite(n) ? n : NaN;
+  }
+
+  function addDerivedEventFields(e){
+    const ratioMax = (e.severity_ratio_max !== undefined && e.severity_ratio_max !== null && e.severity_ratio_max !== "")
+      ? safeNum(e.severity_ratio_max)
+      : (safeNum(e.AE_max) && safeNum(e.thr_max) ? safeNum(e.AE_max) / safeNum(e.thr_max) : NaN);
+
+    const overPct = Number.isFinite(ratioMax) ? (ratioMax - 1) * 100 : NaN;
+
+    return { ...e, _ratioMax: ratioMax, _overPct: overPct, _startTs: Date.parse(e.start) };
+  }
+
+  function renderTable(evRows){
+    const tbody = document.querySelector("#eventsTable tbody");
+    tbody.innerHTML = "";
+
+    evRows.forEach(r => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${r.event_id}</td>
+        <td>${r.type}</td>
+        <td>${toNiceTime(r.start)}</td>
+        <td>${fmt(r.duration_h, 2)}</td>
+        <td>${fmt(r.AE_max, 2)}</td>
+        <td>${fmt(r.thr_max, 2)}</td>
+        <td>${Number.isFinite(r._overPct) ? (fmt(r._overPct, 0) + "%") : "—"}</td>
+        <td>${fmt(r.AE_sum, 2)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function downloadCSV(filename, rows){
+    if (!rows || rows.length === 0) {
+      alert("Nothing to download for this selection.");
+      return;
+    }
+    const csv = Papa.unparse(rows);
+    const blob = new Blob([csv], {type: "text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  (async () => {
+    const aboutBtn = document.getElementById("aboutBtn");
+    const aboutOverlay = document.getElementById("aboutOverlay");
+    const aboutClose = document.getElementById("aboutClose");
+
+    function openAbout(){ aboutOverlay.style.display = "flex"; }
+    function closeAbout(){ aboutOverlay.style.display = "none"; }
+
+    aboutBtn.addEventListener("click", openAbout);
+    aboutClose.addEventListener("click", closeAbout);
+    aboutOverlay.addEventListener("click", (e) => { if (e.target === aboutOverlay) closeAbout(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAbout(); });
+
+    const buildings = await loadCSV(PATH_BUILDINGS);
+    const metrics   = await loadCSV(PATH_METRICS);
+    const eventsRaw = await loadCSV(PATH_EVENTS);
+
+    const events = eventsRaw.map(addDerivedEventFields);
+
+    const metByBid = buildLookup(metrics, "building_id");
+    const bByBid   = buildLookup(buildings, "building_id");
+
+    const rows = buildings.map(b => {
+      const bid = String(b.building_id);
+      const m = metByBid.get(bid) || {event_count:0, total_event_h:0, mean_severity:0, peak_severity:0};
+      return {
+        building_id: bid,
+        building_name: (b.building_name ?? bid),
+        x: Number(b.x), // x = latitude
+        y: Number(b.y), // y = longitude
+        event_count: Number(m.event_count ?? 0),
+        total_event_h: Number(m.total_event_h ?? 0),
+        mean_severity: Number(m.mean_severity ?? 0),
+        peak_severity: Number(m.peak_severity ?? 0)
+      };
+    });
+
+    const sel = document.getElementById("buildingSelect");
+    sel.innerHTML = `<option value="">Choose…</option>` + rows
+      .sort((a,b) => a.building_id.localeCompare(b.building_id))
+      .map(r => `<option value="${r.building_id}">Building ${r.building_id} (${r.building_name})</option>`)
+      .join("");
+
+    const latMean = rows.reduce((s,r)=>s+r.x,0) / Math.max(rows.length,1);
+    const lonMean = rows.reduce((s,r)=>s+r.y,0) / Math.max(rows.length,1);
+
+    const map = L.map("map", { zoomControl: true }).setView([latMean, lonMean], 16);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 20,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const ec = rows.map(r => r.event_count);
+    const sev = rows.map(r => r.mean_severity);
+    const maxEC = Math.max(...ec, 1);
+    const minSev = Math.min(...sev);
+    const maxSev = Math.max(...sev);
+
+    function markerRadius(eventCount){
+      const t = eventCount / Math.max(maxEC, 1);
+      return 7 + 18 * t;
+    }
+
+    let selectedBid = null;
+
+    // ring + fill markers, keyed by building_id
+    const ringByBid = new Map();
+    const fillByBid = new Map();
+
+    function applySelectionStyles(){
+      fillByBid.forEach((mk, bid) => {
+        const isSel = (bid === selectedBid);
+
+        mk.setStyle({
+          weight: isSel ? 2.4 : 1.2,
+          color: isSel ? "#111" : "rgba(0,0,0,0.35)",
+          fillOpacity: isSel ? 0.95 : (selectedBid ? 0.30 : 0.78),
+          opacity: isSel ? 1.0 : (selectedBid ? 0.30 : 0.9)
+        });
+
+        const ring = ringByBid.get(bid);
+        if (ring){
+          ring.setStyle({
+            opacity: isSel ? 1.0 : (selectedBid ? 0.30 : 0.95),
+            weight: isSel ? 4.0 : 3.0
+          });
+          if (isSel) ring.bringToFront();
+        }
+
+        if (isSel) mk.bringToFront();
+      });
+    }
+
+    function clearSelection(){
+      selectedBid = null;
+      applySelectionStyles();
+      map.closePopup();
+    }
+
+    function showBuilding(bid){
+      if (!bid) {
+        clearRightPanel();
+        clearSelection();
+        return;
+      }
+
+      const b = bByBid.get(String(bid));
+      const m = metByBid.get(String(bid)) || null;
+
+      document.getElementById("bTitle").textContent = `Building ${bid} (${b?.building_name ?? "Building"})`;
+      document.getElementById("bId").textContent = String(bid);
+      document.getElementById("bSub").textContent = "Detected events (sorted by impact; use search to filter).";
+      setKPIs(m);
+
+      const allEv = events
+        .filter(e => String(e.building_id) === String(bid))
+        .sort((a,b) => (safeNum(b.AE_sum) - safeNum(a.AE_sum)));
+
+      renderTable(allEv);
+      document.getElementById("searchBox").value = "";
+
+      setDownloadEnabled(true);
+      sel.value = String(bid);
+    }
+
+    rows.forEach(r => {
+      const fill = severityColor(r.mean_severity, minSev, maxSev);
+      const rad = markerRadius(r.event_count);
+
+      const ring = L.circleMarker([r.x, r.y], {
+        radius: rad + 2.5,
+        color: "rgba(255,255,255,0.98)",
+        weight: 3.0,
+        fillOpacity: 0,
+        opacity: 0.95
+      }).addTo(map);
+
+      const marker = L.circleMarker([r.x, r.y], {
+        radius: rad,
+        color: "rgba(0,0,0,0.35)",
+        weight: 1.2,
+        fillColor: fill,
+        fillOpacity: 0.78,
+        opacity: 0.9
+      }).addTo(map);
+
+      ringByBid.set(r.building_id, ring);
+      fillByBid.set(r.building_id, marker);
+
+      const tipHtml = `
+        <div style="min-width:240px">
+          <div style="font-weight:800">Building ${r.building_id} (${r.building_name})</div>
+          <div style="margin-top:6px">Events: <b>${r.event_count}</b></div>
+          <div>Total hours: <b>${fmt(r.total_event_h,1)}</b></div>
+          <div>Mean severity (AE_mean): <b>${fmt(r.mean_severity,2)}</b></div>
+          <div>Peak severity: <b>${fmt(r.peak_severity,2)}</b></div>
+        </div>
+      `;
+
+      marker.bindTooltip(tipHtml, { sticky: true, direction: "top", opacity: 0.95 });
+      marker.bindPopup(tipHtml, { closeButton: true });
+
+      function selectThis(){
+        selectedBid = r.building_id;
+        applySelectionStyles();
+        marker.openPopup();
+        showBuilding(r.building_id);
+        map.panTo(marker.getLatLng(), { animate: true });
+      }
+
+      marker.on("click", selectThis);
+      ring.on("click", selectThis);
+    });
+
+    const bounds = L.latLngBounds(rows.map(r => [r.x, r.y]));
+    if (rows.length > 1) map.fitBounds(bounds.pad(0.15));
+
+    const legend = L.control({position: "topright"});
+    legend.onAdd = function(){
+      const div = L.DomUtil.create("div", "legend");
+      div.innerHTML = `
+        <div class="legend-title">Mean severity</div>
+        <div class="grad"></div>
+        <div class="legend-row">
+          <span>${fmt(minSev,1)}</span>
+          <span>${fmt(maxSev,1)}</span>
+        </div>
+
+        <div class="legend-sizes">
+          <div style="font-weight:800; margin-top:10px;">Marker size</div>
+          <div class="dotline">
+            <div class="dot" style="width:12px;height:12px;"></div>
+            <span>fewer events</span>
+          </div>
+          <div class="dotline">
+            <div class="dot" style="width:22px;height:22px;"></div>
+            <span>more events</span>
+          </div>
+        </div>
+
+        <div style="margin-top:10px; font-size:12px; color:#475467;">
+          Click a marker to select (others dim).
+        </div>
+      `;
+      L.DomEvent.disableClickPropagation(div);
+      L.DomEvent.disableScrollPropagation(div);
+      return div;
+    };
+    legend.addTo(map);
+
+    map.on("click", () => {
+      if (selectedBid) {
+        sel.value = "";
+        clearRightPanel();
+        clearSelection();
+      }
+    });
+
+    sel.addEventListener("change", () => {
+      const bid = sel.value;
+      if (!bid) {
+        clearRightPanel();
+        clearSelection();
+        return;
+      }
+      selectedBid = String(bid);
+      applySelectionStyles();
+
+      const mk = fillByBid.get(selectedBid);
+      if (mk) {
+        mk.openPopup();
+        map.panTo(mk.getLatLng(), { animate: true });
+      }
+      showBuilding(bid);
+    });
+
+    document.getElementById("clearBtn").addEventListener("click", () => {
+      sel.value = "";
+      clearRightPanel();
+      clearSelection();
+    });
+
+    document.getElementById("searchBox").addEventListener("input", (ev) => {
+      const bid = sel.value;
+      if (!bid) return;
+
+      const q = ev.target.value.toLowerCase().trim();
+      const all = events.filter(e => String(e.building_id) === String(bid));
+
+      const filtered = !q ? all : all.filter(e =>
+        String(e.event_id).toLowerCase().includes(q) ||
+        String(e.type).toLowerCase().includes(q)
+      );
+
+      filtered.sort((a,b) => (safeNum(b.AE_sum) - safeNum(a.AE_sum)));
+      renderTable(filtered);
+    });
+
+    document.getElementById("dlAllBtn").addEventListener("click", () => {
+      const bid = sel.value;
+      if (!bid) return;
+      const out = eventsRaw.filter(e => String(e.building_id) === String(bid));
+      downloadCSV(`events_building_${bid}.csv`, out);
+    });
+
+    document.getElementById("dlFilteredBtn").addEventListener("click", () => {
+      const bid = sel.value;
+      if (!bid) return;
+
+      const q = document.getElementById("searchBox").value.toLowerCase().trim();
+      const all = eventsRaw.filter(e => String(e.building_id) === String(bid));
+
+      const filtered = !q ? all : all.filter(e =>
+        String(e.event_id).toLowerCase().includes(q) ||
+        String(e.type).toLowerCase().includes(q)
+      );
+
+      downloadCSV(`events_building_${bid}_filtered.csv`, filtered);
+    });
+
+    document.getElementById("dlMetricsBtn").addEventListener("click", () => {
+      downloadCSV(`building_metrics.csv`, metrics);
+    });
+
+    clearRightPanel();
+    applySelectionStyles();
+
+  })().catch(err => {
+    alert(err.message);
+    console.error(err);
+  });
+</script>
+
+</body>
+</html>
